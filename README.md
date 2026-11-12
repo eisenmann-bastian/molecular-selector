@@ -1,4 +1,4 @@
-# Molecule selector
+# Molecular selector
 
 Identify functional groups and interaction sites in molecular SDF records using
 RDKit. Selection returns the matched atom indices and highlighted site indices;
@@ -13,8 +13,9 @@ python -m pip install .
 ```
 
 The installation fetches `molecular-utilities` from GitHub as specified in
-`pyproject.toml`. No sibling checkout is required. The distribution is named
-`molecular-selector`; its CLI command remains `molecule-selector`.
+`pyproject.toml`. No sibling checkout is required. The distribution and CLI
+command are named `molecular-selector`; the old `molecule-selector` command
+is no longer provided.
 
 For development, use `python -m pip install -e .`, then run
 `python -m unittest discover -s tests` for the offline tests.
@@ -22,9 +23,9 @@ For development, use `python -m pip install -e .`, then run
 ## Usage
 
 ```sh
-molecule-selector --list-selectors
-molecule-selector molecule.sdf --name thiol -o matches.csv
-molecule-selector --csv molecules.csv -o matches.csv
+molecular-selector --list-selectors
+molecular-selector molecule.sdf --name thiol -o matches.csv
+molecular-selector --csv molecules.csv -o matches.csv
 ```
 
 The batch CSV contains one SDF path per row. Relative SDF paths are resolved
@@ -42,7 +43,7 @@ from molecular_selector import MolecularSelector
 
 `MolecularSelector.read_sdf(path)`
 provides a public iterator over SDF records with explicit hydrogens retained.
-Selection CSVs can be consumed by `molecule-axes` from molecular-aligner.
+Selection CSVs can be consumed by `molecular-axes` from molecular-aligner.
 
 The CLI configures its shared utilities logger under the `molecular_selector`
 namespace and writes log messages to standard error; CSV output remains on
