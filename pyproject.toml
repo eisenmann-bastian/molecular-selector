@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-molecule-selector = "molecule_selector.cli:main"
+molecule-selector = "molecular_selector.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["molecule_selector*"]
+include = ["molecular_selector*"]

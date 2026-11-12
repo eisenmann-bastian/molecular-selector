@@ -10,11 +10,11 @@ from unittest.mock import patch
 
 from rdkit import Chem
 
-from molecule_selector import cli as selector
-from molecule_selector.batch import BatchSelector
-from molecule_selector.definitions import NamedSelector, SelectorRegistry
-from molecule_selector.matching import MoleculeSelector
-from molecule_selector.output import CsvResultWriter
+from molecular_selector import cli as selector
+from molecular_selector.batch import BatchSelector
+from molecular_selector.definitions import NamedSelector, SelectorRegistry
+from molecular_selector.matching import MolecularSelector
+from molecular_selector.output import CsvResultWriter
 
 
 class SelectorTests(unittest.TestCase):
@@ -31,6 +31,12 @@ class SelectorTests(unittest.TestCase):
             writer.write(molecule)
         writer.close()
 
+    def test_public_selector_class_export(self):
+        from molecular_selector import MolecularSelector as PublicSelector
+
+        self.assertIs(PublicSelector, MolecularSelector)
+        self.assertEqual(PublicSelector.__name__, "MolecularSelector")
+
     def test_cli_uses_project_logger_without_changing_other_namespaces(self):
         import logging
 
@@ -40,14 +46,14 @@ class SelectorTests(unittest.TestCase):
         with contextlib.redirect_stderr(stderr):
             status = selector.main([str(self.path.parent / "missing.sdf"), "--name", "thiol"])
         self.assertEqual(status, 1)
-        self.assertIn("ERROR molecule_selector.cli:", stderr.getvalue())
+        self.assertIn("ERROR molecular_selector.cli:", stderr.getvalue())
         self.assertEqual((other.level, other.handlers, other.propagate),
                          (previous_level, previous_handlers, previous_propagate))
 
     def test_components_share_custom_registry(self):
         self.write_molecules(["CSC"])
         registry = SelectorRegistry({"sulfur": NamedSelector("[S:1]", ("sulphur",))})
-        matcher = MoleculeSelector(registry)
+        matcher = MolecularSelector(registry)
         input_file = self.path.parent / "custom.csv"
         input_file.write_text("file,sulphur\nmolecules.sdf,x\n", encoding="utf-8")
         result = BatchSelector(matcher).select(input_file)
@@ -251,7 +257,7 @@ class SelectorTests(unittest.TestCase):
         self.write_molecules(["CSC", "CC(=O)[O-]"])
         csv_file = self.path.parent / "input.csv"
         csv_file.write_text("sdf\nmolecules.sdf\n", encoding="utf-8")
-        matcher = MoleculeSelector()
+        matcher = MolecularSelector()
         with patch.object(matcher, "_read_sdf", wraps=matcher._read_sdf) as read_sdf:
             result = BatchSelector(matcher).select(csv_file)
         read_sdf.assert_called_once()

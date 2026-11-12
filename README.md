@@ -31,11 +31,18 @@ relative to the CSV file. Output SDF paths are relative to the working directory
 The output includes zero-based record, match and atom indices; atom index arrays
 are encoded as JSON. Existing output files are not overwritten.
 
-The Python API exposes `MoleculeSelector`, `SelectorRegistry`, `BatchSelector`,
-`CsvResultWriter`, and `carboxylate_sites`. `MoleculeSelector.read_sdf(path)`
+The `molecular_selector` Python package exposes `MolecularSelector`,
+`SelectorRegistry`, `BatchSelector`, `CsvResultWriter`, and `carboxylate_sites`.
+For example:
+
+```python
+from molecular_selector import MolecularSelector
+```
+
+`MolecularSelector.read_sdf(path)`
 provides a public iterator over SDF records with explicit hydrogens retained.
 Selection CSVs can be consumed by `molecule-axes` from molecule-aligner.
 
-The CLI configures its shared utilities logger under the `molecule_selector`
+The CLI configures its shared utilities logger under the `molecular_selector`
 namespace and writes log messages to standard error; CSV output remains on
 standard output. Importing the library does not configure logging.

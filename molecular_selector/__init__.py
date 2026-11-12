@@ -2,10 +2,10 @@
 
 from .batch import BatchSelector
 from .definitions import NamedSelector, SelectorRegistry, carboxylate_sites
-from .matching import MoleculeSelector
+from .matching import MolecularSelector
 from .output import CsvResultWriter
 
 __all__ = [
-    "BatchSelector", "CsvResultWriter", "MoleculeSelector", "NamedSelector",
+    "BatchSelector", "CsvResultWriter", "MolecularSelector", "NamedSelector",
     "SelectorRegistry", "carboxylate_sites",
 ]

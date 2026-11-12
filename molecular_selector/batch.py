@@ -3,14 +3,14 @@
 import csv
 from pathlib import Path
 
-from .matching import MoleculeSelector
+from .matching import MolecularSelector
 
 
 class BatchSelector:
     """Apply selectors to SDF paths, supporting path-only and legacy batch CSVs."""
 
     def __init__(self, molecule_selector=None):
-        self.molecule_selector = molecule_selector if molecule_selector is not None else MoleculeSelector()
+        self.molecule_selector = molecule_selector if molecule_selector is not None else MolecularSelector()
 
     def select(self, csv_file, *, delimiter=","):
         """Apply all selectors for one column, or marked selectors for legacy input."""

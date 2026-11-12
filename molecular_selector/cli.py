@@ -8,13 +8,13 @@ from pathlib import Path
 from molecule_utilities.logging import configure_logging, get_logger
 from .batch import BatchSelector
 from .definitions import SELECTORS, SelectorRegistry
-from .matching import MoleculeSelector
+from .matching import MolecularSelector
 from .output import CsvResultWriter
 
-LOGGER_NAMESPACE = "molecule_selector"
+LOGGER_NAMESPACE = "molecular_selector"
 logger = get_logger("cli", namespace=LOGGER_NAMESPACE)
 _registry = SelectorRegistry()
-_molecule_selector = MoleculeSelector(_registry)
+_molecule_selector = MolecularSelector(_registry)
 _batch_selector = BatchSelector(_molecule_selector)
 _csv_writer = CsvResultWriter()
 _named_selector = _registry.resolve

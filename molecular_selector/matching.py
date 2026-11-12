@@ -8,7 +8,7 @@ from rdkit import Chem
 from .definitions import SelectorRegistry
 
 
-class MoleculeSelector:
+class MolecularSelector:
     """Apply a named selector or SMARTS to all records in an SDF."""
 
     def __init__(self, registry=None):
