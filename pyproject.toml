@@ -9,7 +9,7 @@ description = "Select molecular functional groups and interaction sites"
 requires-python = ">=3.10"
 dependencies = [
     "rdkit>=2024.9",
-    "molecular-utilities @ git+https://github.com/eisenmann-bastian/molecular-utilities.git@4c0c47d64b6766f52f95d375533e99a59623da32",
+    "molecular-utilities @ git+https://github.com/eisenmann-bastian/molecular-utilities.git",
 ]
 
 [project.scripts]
