@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "molecule-selector"
+version = "0.1.0"
+description = "Select molecular functional groups and interaction sites"
+requires-python = ">=3.10"
+dependencies = [
+    "rdkit>=2024.9",
+    "molecular-utilities @ git+https://github.com/eisenmann-bastian/molecular-utilities.git@3ceb6ad2842129882840c83062dd4c78fcdefe7b",
+]
+
+[project.scripts]
+molecule-selector = "molecule_selector.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["molecule_selector*"]

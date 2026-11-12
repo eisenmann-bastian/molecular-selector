@@ -1,0 +1,11 @@
+"""Functional-group selection for molecular structures."""
+
+from .batch import BatchSelector
+from .definitions import NamedSelector, SelectorRegistry, carboxylate_sites
+from .matching import MoleculeSelector
+from .output import CsvResultWriter
+
+__all__ = [
+    "BatchSelector", "CsvResultWriter", "MoleculeSelector", "NamedSelector",
+    "SelectorRegistry", "carboxylate_sites",
+]

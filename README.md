@@ -1,0 +1,41 @@
+# Molecule selector
+
+Identify functional groups and interaction sites in molecular SDF records using
+RDKit. Selection returns the matched atom indices and highlighted site indices;
+axis generation and molecular alignment belong to molecule-aligner.
+
+## Installation
+
+Install Git and Python 3.10 or later, then install from this repository:
+
+```sh
+python -m pip install .
+```
+
+The installation fetches `molecular-utilities` from GitHub at the revision
+pinned in `pyproject.toml`. No sibling checkout is required.
+
+For development, use `python -m pip install -e .`, then run
+`python -m unittest discover -s tests` for the offline tests.
+
+## Usage
+
+```sh
+molecule-selector --list-selectors
+molecule-selector molecule.sdf --name thiol -o matches.csv
+molecule-selector --csv molecules.csv -o matches.csv
+```
+
+The batch CSV contains one SDF path per row. Relative SDF paths are resolved
+relative to the CSV file. Output SDF paths are relative to the working directory.
+The output includes zero-based record, match and atom indices; atom index arrays
+are encoded as JSON. Existing output files are not overwritten.
+
+The Python API exposes `MoleculeSelector`, `SelectorRegistry`, `BatchSelector`,
+`CsvResultWriter`, and `carboxylate_sites`. `MoleculeSelector.read_sdf(path)`
+provides a public iterator over SDF records with explicit hydrogens retained.
+Selection CSVs can be consumed by `molecule-axes` from molecule-aligner.
+
+The CLI configures its shared utilities logger under the `molecule_selector`
+namespace and writes log messages to standard error; CSV output remains on
+standard output. Importing the library does not configure logging.
