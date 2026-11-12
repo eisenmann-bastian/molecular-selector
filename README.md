@@ -12,8 +12,9 @@ Install Git and Python 3.10 or later, then install from this repository:
 python -m pip install .
 ```
 
-The installation fetches `molecular-utilities` from GitHub at the revision
-pinned in `pyproject.toml`. No sibling checkout is required.
+The installation fetches `molecular-utilities` from GitHub as specified in
+`pyproject.toml`. No sibling checkout is required. The distribution is named
+`molecular-selector`; its CLI command remains `molecule-selector`.
 
 For development, use `python -m pip install -e .`, then run
 `python -m unittest discover -s tests` for the offline tests.
