@@ -5,7 +5,7 @@ import csv
 import sys
 from pathlib import Path
 
-from molecule_utilities.logging import configure_logging, get_logger
+from molecular_utilities.logging import configure_logging, get_logger
 from .batch import BatchSelector
 from .definitions import SELECTORS, SelectorRegistry
 from .matching import MolecularSelector

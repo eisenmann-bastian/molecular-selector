@@ -2,7 +2,7 @@
 
 Identify functional groups and interaction sites in molecular SDF records using
 RDKit. Selection returns the matched atom indices and highlighted site indices;
-axis generation and molecular alignment belong to molecule-aligner.
+axis generation and molecular alignment belong to molecular-aligner.
 
 ## Installation
 
@@ -41,7 +41,7 @@ from molecular_selector import MolecularSelector
 
 `MolecularSelector.read_sdf(path)`
 provides a public iterator over SDF records with explicit hydrogens retained.
-Selection CSVs can be consumed by `molecule-axes` from molecule-aligner.
+Selection CSVs can be consumed by `molecule-axes` from molecular-aligner.
 
 The CLI configures its shared utilities logger under the `molecular_selector`
 namespace and writes log messages to standard error; CSV output remains on
