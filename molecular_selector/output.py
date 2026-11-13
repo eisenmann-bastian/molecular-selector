@@ -32,7 +32,9 @@ class CsvResultWriter:
                 if not matches:
                     writer.writerow(common + ["", "", ""])
                 for index, match in enumerate(matches):
-                    writer.writerow(common + [
+                    match_common = common.copy()
+                    match_common[5] = match.get("smarts", match_common[5])
+                    writer.writerow(match_common + [
                         index,
                         json.dumps(match["atom_indices"], separators=(",", ":")),
                         json.dumps(match["site_atom_indices"], separators=(",", ":")),

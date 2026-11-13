@@ -1,0 +1,4 @@
+sdf,thiol,hydrogen bond donor,hydrogen bond acceptor,aromatic ring
+molecules/ethanethiol.sdf,x,x,,
+molecules/acetic-acid.sdf,,x,x,
+molecules/benzene.sdf,,,,x

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from rdkit import Chem
 
-from .definitions import SelectorRegistry
+from .definitions import SelectorQuery, SelectorRegistry
 
 
 class MolecularSelector:
@@ -69,17 +69,36 @@ class MolecularSelector:
             selector_name = None
             query_smarts = smarts
         aromatic_ring = selector_name == "aromatic ring"
+        compiled_queries = []
         if not aromatic_ring:
-            if not isinstance(query_smarts, str) or not query_smarts.strip():
-                raise ValueError("SMARTS must not be empty")
-            query = Chem.MolFromSmarts(query_smarts)
-            if query is None or query.GetNumAtoms() == 0:
-                raise ValueError(f"invalid SMARTS: {query_smarts!r}")
-            site_positions = [
-                atom.GetIdx() for atom in query.GetAtoms() if atom.GetAtomMapNum() > 0
-            ] if name is not None else list(range(query.GetNumAtoms()))
-            if not site_positions:
-                site_positions = list(range(query.GetNumAtoms()))
+            if name is not None and definition.queries:
+                queries = definition.queries
+            else:
+                if not isinstance(query_smarts, str) or not query_smarts.strip():
+                    raise ValueError("SMARTS must not be empty")
+                queries = (SelectorQuery(query_smarts),)
+            for entry in queries:
+                if not isinstance(entry.smarts, str) or not entry.smarts.strip():
+                    raise ValueError("SMARTS must not be empty")
+                query = Chem.MolFromSmarts(entry.smarts)
+                if query is None or query.GetNumAtoms() == 0:
+                    raise ValueError(f"invalid SMARTS: {entry.smarts!r}")
+                if entry.atom_map_numbers is not None:
+                    labels = set(entry.atom_map_numbers)
+                    positions = [
+                        atom.GetIdx() for atom in query.GetAtoms()
+                        if atom.GetAtomMapNum() in labels
+                    ]
+                    found = {query.GetAtomWithIdx(position).GetAtomMapNum() for position in positions}
+                    if not labels or found != labels:
+                        raise ValueError(f"invalid site atom-map labels for SMARTS: {entry.smarts!r}")
+                elif name is not None:
+                    positions = [
+                        atom.GetIdx() for atom in query.GetAtoms() if atom.GetAtomMapNum() > 0
+                    ] or list(range(query.GetNumAtoms()))
+                else:
+                    positions = list(range(query.GetNumAtoms()))
+                compiled_queries.append((query, positions, entry.smarts))
 
         molecules = []
         for index, mol in enumerate(records):
@@ -93,15 +112,23 @@ class MolecularSelector:
                         for i in range(len(ring))
                     )
                 )
+                query_matches = ((atom_matches, None, None),)
             else:
-                atom_matches = mol.GetSubstructMatches(query, uniquify=True, maxMatches=0)
-            for atoms in atom_matches:
-                sites = tuple(atoms) if aromatic_ring else tuple(atoms[position] for position in site_positions)
-                key = tuple(sorted(sites))
-                if name is not None and key in seen_sites:
-                    continue
-                seen_sites.add(key)
-                matches.append({"atom_indices": list(atoms), "site_atom_indices": list(sites)})
+                query_matches = (
+                    (mol.GetSubstructMatches(query, uniquify=True, maxMatches=0), positions, smarts_text)
+                    for query, positions, smarts_text in compiled_queries
+                )
+            for atom_matches, positions, smarts_text in query_matches:
+                for atoms in atom_matches:
+                    sites = tuple(atoms) if positions is None else tuple(atoms[position] for position in positions)
+                    key = tuple(sorted(sites))
+                    if name is not None and key in seen_sites:
+                        continue
+                    seen_sites.add(key)
+                    match = {"atom_indices": list(atoms), "site_atom_indices": list(sites)}
+                    if len(compiled_queries) > 1:
+                        match["smarts"] = smarts_text
+                    matches.append(match)
             molecules.append({
                 "record_index": index,
                 "name": mol.GetProp("_Name") if mol.HasProp("_Name") else "",

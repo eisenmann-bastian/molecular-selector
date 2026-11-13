@@ -10,6 +10,7 @@ requires-python = ">=3.10"
 dependencies = [
     "rdkit>=2024.9",
     "molecular-utilities @ git+https://github.com/eisenmann-bastian/molecular-utilities.git",
+    "molecular-functional-groups @ git+https://github.com/eisenmann-bastian/molecular-functional-groups.git@c50c09e430b1006cbc3b7afa28d7bb939901fe9a",
 ]
 
 [project.scripts]

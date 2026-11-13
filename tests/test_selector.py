@@ -10,9 +10,14 @@ from unittest.mock import patch
 
 from rdkit import Chem
 
+from molecular_functional_groups import (
+    FunctionalGroup,
+    INTERACTION_SITES,
+    MAPPED_FUNCTIONAL_GROUP_SMARTS,
+)
 from molecular_selector import cli as selector
 from molecular_selector.batch import BatchSelector
-from molecular_selector.definitions import NamedSelector, SelectorRegistry
+from molecular_selector.definitions import NamedSelector, SelectorQuery, SelectorRegistry
 from molecular_selector.matching import MolecularSelector
 from molecular_selector.output import CsvResultWriter
 
@@ -65,13 +70,90 @@ class SelectorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown selector"):
             matcher.select(self.path, name="thioether")
 
+    def test_shared_group_and_interaction_registry_coverage(self):
+        registry = SelectorRegistry()
+        for group in FunctionalGroup:
+            with self.subTest(group=group):
+                _, definition = registry.resolve(group.value)
+                self.assertEqual(definition.queries[0].smarts, MAPPED_FUNCTIONAL_GROUP_SMARTS[group])
+        for interaction, roles in INTERACTION_SITES.items():
+            for role, sites in roles.items():
+                with self.subTest(interaction=interaction, role=role):
+                    name = f"interaction {interaction.value} {role.value}"
+                    _, definition = registry.resolve(name)
+                    actual = {(query.smarts, query.atom_map_numbers) for query in definition.queries}
+                    expected = {(site.smarts, site.atom_map_numbers) for site in sites.values()}
+                    self.assertEqual(actual, expected)
+
+    def test_shared_role_site_labels_and_composite_csv(self):
+        self.write_molecules(["CC(=O)O", "CC(=O)N"])
+        donor = selector.select_sdf(self.path, name="hydrogen bond donor")
+        acceptor = selector.select_sdf(self.path, name="hydrogen bond acceptor")
+        self.assertIn([3], [match["site_atom_indices"] for match in donor["molecules"][0]["matches"]])
+        self.assertIn([2], [match["site_atom_indices"] for match in acceptor["molecules"][0]["matches"]])
+        self.assertIn([3], [match["site_atom_indices"] for match in donor["molecules"][1]["matches"]])
+        self.assertIn([2], [match["site_atom_indices"] for match in acceptor["molecules"][1]["matches"]])
+        output = io.StringIO()
+        CsvResultWriter().write(donor, output, sdf_file=self.path)
+        for row in csv.DictReader(io.StringIO(output.getvalue())):
+            self.assertIsNotNone(Chem.MolFromSmarts(row["smarts"]))
+
+    def test_shared_role_and_group_selection_in_batch_and_cli(self):
+        self.write_molecules(["CCl", "CC(=O)O"])
+        input_file = self.path.parent / "shared.csv"
+        input_file.write_text(
+            "file,interaction_halogen_bond_sigma_hole_donor,primary_alcohol\n"
+            "molecules.sdf,x,x\n",
+            encoding="utf-8",
+        )
+        results = selector.select_csv(input_file)["rows"][0]["results"]
+        self.assertEqual(results[0]["molecules"][0]["matches"][0]["site_atom_indices"], [1])
+        self.assertEqual(results[1]["molecules"][0]["matches"], [])
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(selector.main([str(self.path), "--name", "interaction-hydrogen-bond-donor"]), 0)
+        self.assertTrue(list(csv.DictReader(io.StringIO(output.getvalue()))))
+
+    def test_invalid_site_labels_are_rejected(self):
+        registry = SelectorRegistry({
+            "bad": NamedSelector("[C:1]", queries=(SelectorQuery("[C:1]", (2,)),))
+        })
+        with self.assertRaisesRegex(ValueError, "site atom-map"):
+            MolecularSelector(registry).select_molecules([Chem.MolFromSmiles("C")], name="bad")
+
+    def test_shared_pattern_scope_changes(self):
+        examples = (
+            ("ether", "CC(=O)OC", False),
+            ("carboxylate", "C(=O)([O-])OC", True),
+            ("hydrogen bond donor", "CO", False),
+            ("hydrogen bond donor", "CCO", True),
+            ("hydrogen bond acceptor", "C=O", False),
+            ("chalcogen bond donor", "C[Se]C", False),
+        )
+        matcher = MolecularSelector()
+        for name, smiles, expected in examples:
+            with self.subTest(name=name, smiles=smiles):
+                result = matcher.select_molecules([Chem.MolFromSmiles(smiles)], name=name)
+                self.assertEqual(bool(result["molecules"][0]["matches"]), expected)
+
+    def test_composite_no_match_csv_lists_queries(self):
+        self.write_molecules(["C"])
+        result = selector.select_sdf(self.path, name="hydrogen bond donor")
+        output = io.StringIO()
+        CsvResultWriter().write(result, output, sdf_file=self.path)
+        row = next(csv.DictReader(io.StringIO(output.getvalue())))
+        queries = json.loads(row["smarts"])
+        self.assertGreater(len(queries), 1)
+        self.assertTrue(all(Chem.MolFromSmarts(query) for query in queries))
+        self.assertEqual(row["site_atom_indices"], "")
+
     def test_thioether_highlights_only_sulfur(self):
         self.write_molecules(["CSC", "CSCCSC", "CC"])
         result = selector.select_sdf(self.path, name="ThioEther")
         self.assertEqual(result["atom_index_base"], 0)
         self.assertEqual(
             result["molecules"][0]["matches"],
-            [{"atom_indices": [0, 1, 2], "site_atom_indices": [1]}],
+            [{"atom_indices": [1, 0, 2], "site_atom_indices": [1]}],
         )
         self.assertEqual(
             [match["site_atom_indices"] for match in result["molecules"][1]["matches"]],
@@ -88,31 +170,34 @@ class SelectorTests(unittest.TestCase):
         self.assertEqual(match["site_atom_indices"], [1, 2, 3])
 
     def test_hydrogen_bond_sites_exclude_amide_nitrogen_as_acceptor(self):
-        self.write_molecules(["CC(=O)N", "C[NH3+]", "C=O"])
+        self.write_molecules(["CC(=O)N", "C[NH3+]", "CC=O"])
         donor = selector.select_sdf(self.path, name="hydrogen-bond donor")
         acceptor = selector.select_sdf(self.path, name="hydrogen bond acceptor")
         self.assertEqual(donor["molecules"][0]["matches"][0]["site_atom_indices"], [3])
         self.assertEqual(acceptor["molecules"][0]["matches"][0]["site_atom_indices"], [2])
         self.assertEqual(acceptor["molecules"][1]["matches"], [])
-        self.assertEqual(acceptor["molecules"][2]["matches"][0]["site_atom_indices"], [1])
+        self.assertEqual(acceptor["molecules"][2]["matches"][0]["site_atom_indices"], [2])
 
     def test_all_named_smarts_compile_and_are_exposed(self):
         for name, definition in selector.SELECTORS.items():
             with self.subTest(name=name):
-                if definition.smarts is not None:
+                if definition.queries:
+                    for query in definition.queries:
+                        self.assertIsNotNone(Chem.MolFromSmarts(query.smarts))
+                elif definition.smarts is not None:
                     self.assertIsNotNone(Chem.MolFromSmarts(definition.smarts))
                 self.assertEqual(selector._named_selector(name)[0], name)
 
     def test_interaction_site_selectors(self):
         examples = {
             "halogen bond donor": ("CCl", "[Cl-]", 1),
-            "halogen bond acceptor": ("C=O", "C[NH3+]", 1),
+            "halogen bond acceptor": ("CC=O", "C[NH3+]", 2),
             "positive charge": ("C[NH3+]", "CN", 1),
             "negative charge": ("CC(=O)[O-]", "CC(=O)O", 3),
             "chalcogen bond donor": ("CSC", "CS", 1),
-            "chalcogen bond acceptor": ("C=O", "C[NH3+]", 1),
+            "chalcogen bond acceptor": ("CC=O", "C[NH3+]", 2),
             "metal center": ("[Zn+2]", "C[NH3+]", 0),
-            "metal coordination ligand": ("C=O", "C[NH3+]", 1),
+            "metal coordination ligand": ("CC=O", "C[NH3+]", 2),
         }
         for name, (positive, negative, site) in examples.items():
             with self.subTest(name=name):
@@ -124,9 +209,9 @@ class SelectorTests(unittest.TestCase):
     def test_halogen_and_chalcogen_donor_scope(self):
         self.write_molecules(["CCl", "CBr", "CI", "CF", "[Cl-]", "CSC", "C[Se]C", "CS", "CS(=O)C"])
         halogens = selector.select_sdf(self.path, name="halogen-bond donor")["molecules"]
-        self.assertEqual([bool(record["matches"]) for record in halogens[:5]], [True, True, True, False, False])
+        self.assertEqual([bool(record["matches"]) for record in halogens[:5]], [True, True, True, True, False])
         donors = selector.select_sdf(self.path, name="chalcogen donor")["molecules"]
-        self.assertEqual([bool(record["matches"]) for record in donors[5:]], [True, True, False, False])
+        self.assertEqual([bool(record["matches"]) for record in donors[5:]], [True, False, False, True])
 
     def test_aromatic_ring_sites_include_heterocyclic_and_fused_rings(self):
         self.write_molecules(["c1ccccc1", "c1ccncc1", "c1ccc2ccccc2c1", "C1CCCCC1", "c1ccccc1-c2ccccc2"])
@@ -175,8 +260,10 @@ class SelectorTests(unittest.TestCase):
             self.assertEqual(len(record["matches"][0]["site_atom_indices"]), 2)
         self.assertEqual(records[0]["matches"][0]["site_atom_indices"], [2, 3])
         self.assertEqual(set(records[1]["matches"][0]["site_atom_indices"]), {2, 3})
-        for record in records[3:7]:
+        for record in records[3:5]:
             self.assertEqual(record["matches"], [])
+        for record in records[5:7]:
+            self.assertTrue(record["matches"])
         self.assertEqual(len(records[7]["matches"]), 2)
 
     def test_custom_smarts_returns_more_than_default_match_limit(self):
@@ -227,7 +314,7 @@ class SelectorTests(unittest.TestCase):
         rows = list(csv.DictReader(io.StringIO(output.getvalue())))
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["site_atom_indices"], "[1]")
-        self.assertEqual(rows[0]["atom_indices"], "[0,1,2]")
+        self.assertEqual(rows[0]["atom_indices"], "[1,0,2]")
         self.assertEqual(rows[0]["atom_index_base"], "0")
         self.assertEqual(rows[0]["sdf_file"], os.path.relpath(self.path))
         output = io.StringIO()
@@ -334,7 +421,7 @@ class SelectorTests(unittest.TestCase):
         self.assertEqual([row["record_index"] for row in rows], ["0", "0", "1"])
         self.assertEqual([row["match_index"] for row in rows], ["0", "1", ""])
         self.assertEqual([row["site_atom_indices"] for row in rows], ["[1]", "[4]", ""])
-        self.assertEqual([json.loads(row["atom_indices"]) for row in rows[:2]], [[0, 1, 2], [3, 4, 5]])
+        self.assertEqual([json.loads(row["atom_indices"]) for row in rows[:2]], [[1, 0, 2], [4, 3, 5]])
         self.assertEqual(rows[2]["atom_indices"], "")
         self.assertTrue(all(row["selector"] == "thioether" for row in rows))
 
