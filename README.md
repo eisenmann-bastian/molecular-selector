@@ -4,6 +4,13 @@ Identify functional groups and interaction sites in molecular SDF records using
 RDKit. Selection returns the matched atom indices and highlighted site indices;
 axis generation and molecular alignment belong to molecular-aligner.
 
+## Contents
+
+- [Installation](#installation) · [Examples](#examples) · [Usage](#usage) ·
+  [Functional groups and interaction sites](#functional-groups-and-interaction-sites) ·
+  [Contributing](#contributing) · [Contact and support](#contact-and-support) ·
+  [License](#license)
+
 ## Installation
 
 Install Git and Python 3.10 or later, then install from this repository:
@@ -172,3 +179,18 @@ Selection CSVs can be consumed by `molecular-axes` from molecular-aligner.
 The CLI configures its shared utilities logger under the `molecular_selector`
 namespace and writes log messages to standard error; CSV output remains on
 standard output. Importing the library does not configure logging.
+
+## Contributing
+
+Open an issue or submit a pull request. Include tests and update documentation
+when behavior changes.
+
+## Contact and support
+
+- GitHub: [@eisenmann-bastian](https://github.com/eisenmann-bastian)
+- LinkedIn: [Bastian Eisenmann](https://www.linkedin.com/in/bastianeisenmann/)
+- [Buy me a coffee](https://buymeacoffee.com/bastian.eisenmann)
+
+## License
+
+[BSD 3-Clause License](LICENSE).
