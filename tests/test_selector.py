@@ -10,14 +10,23 @@ from unittest.mock import patch
 
 from rdkit import Chem
 
-from molecular_functional_groups import (
+from molecular_selector import (
+    CARBONYL_SITE_SMARTS,
+    CARBOXYLATE_OXYGEN_PAIR_SMARTS,
     FunctionalGroup,
     INTERACTION_SITES,
+    InteractionRole,
+    InteractionType,
     MAPPED_FUNCTIONAL_GROUP_SMARTS,
+    METAL_CENTER_SITE_SMARTS,
+    NEGATIVE_CHARGE_SITE_SMARTS,
+    POSITIVE_CHARGE_SITE_SMARTS,
 )
 from molecular_selector import cli as selector
 from molecular_selector.batch import BatchSelector
-from molecular_selector.definitions import NamedSelector, SelectorQuery, SelectorRegistry
+from molecular_selector.definitions import (
+    CARBOXYLATE_SMARTS, NamedSelector, SelectorQuery, SelectorRegistry,
+)
 from molecular_selector.matching import MolecularSelector
 from molecular_selector.output import CsvResultWriter
 
@@ -41,6 +50,18 @@ class SelectorTests(unittest.TestCase):
 
         self.assertIs(PublicSelector, MolecularSelector)
         self.assertEqual(PublicSelector.__name__, "MolecularSelector")
+
+    def test_registry_uses_shared_definitions_and_local_aromatic_rings(self):
+        definitions = SelectorRegistry().definitions
+        self.assertIn("carbonyl", definitions)
+        self.assertIsNone(definitions["aromatic ring"].smarts)
+
+    def test_select_by_functional_group_enum(self):
+        result = MolecularSelector().select_molecules(
+            [Chem.MolFromSmiles("Oc1ccccc1")], name=FunctionalGroup.PHENOL
+        )
+        self.assertEqual(result["selector"]["name"], "phenol")
+        self.assertEqual(result["molecules"][0]["matches"][0]["site_atom_indices"], [0])
 
     def test_cli_uses_project_logger_without_changing_other_namespaces(self):
         import logging
@@ -76,6 +97,13 @@ class SelectorTests(unittest.TestCase):
             with self.subTest(group=group):
                 _, definition = registry.resolve(group.value)
                 self.assertEqual(definition.queries[0].smarts, MAPPED_FUNCTIONAL_GROUP_SMARTS[group])
+                labels = set()
+                for role in (InteractionRole.DONOR, InteractionRole.ACCEPTOR):
+                    site = INTERACTION_SITES[InteractionType.HYDROGEN_BOND][role].get(group)
+                    if site is not None:
+                        labels.update(site.atom_map_numbers)
+                self.assertEqual(definition.queries[0].atom_map_numbers,
+                                 tuple(sorted(labels)) if labels else None)
         for interaction, roles in INTERACTION_SITES.items():
             for role, sites in roles.items():
                 with self.subTest(interaction=interaction, role=role):
@@ -84,6 +112,63 @@ class SelectorTests(unittest.TestCase):
                     actual = {(query.smarts, query.atom_map_numbers) for query in definition.queries}
                     expected = {(site.smarts, site.atom_map_numbers) for site in sites.values()}
                     self.assertEqual(actual, expected)
+
+    def test_group_sites_union_shared_roles_and_fallback(self):
+        examples = (
+            ("carboxylic acid", "CC(=O)O", [2, 3]),
+            ("primary amide", "CC(=O)N", [2, 3]),
+            ("tertiary amide", "CC(=O)N(C)C", [2]),
+            ("primary alcohol", "CCO", [2]),
+            ("alkene", "C=C", [0, 1]),
+            ("ammonium", "C[N+](C)(C)C", [1]),
+        )
+        matcher = MolecularSelector()
+        for name, smiles, expected in examples:
+            with self.subTest(name=name):
+                result = matcher.select_molecules([Chem.MolFromSmiles(smiles)], name=name)
+                self.assertEqual(result["molecules"][0]["matches"][0]["site_atom_indices"], expected)
+
+    def test_general_site_queries_are_shared(self):
+        registry = SelectorRegistry()
+        for name, smarts in (
+            ("carbonyl", CARBONYL_SITE_SMARTS),
+            ("positive charge", POSITIVE_CHARGE_SITE_SMARTS),
+            ("negative charge", NEGATIVE_CHARGE_SITE_SMARTS),
+            ("metal center", METAL_CENTER_SITE_SMARTS),
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(registry.resolve(name)[1].smarts, smarts)
+        self.assertEqual(CARBOXYLATE_SMARTS, CARBOXYLATE_OXYGEN_PAIR_SMARTS)
+
+    def test_interaction_aliases_share_canonical_definition(self):
+        registry = SelectorRegistry()
+        for canonical, shared_name, aliases in (
+            ("hydrogen bond donor", "interaction hydrogen bond donor", ("h bond donor", "hbond donor")),
+            ("hydrogen bond acceptor", "interaction hydrogen bond acceptor", ("h bond acceptor", "hbond acceptor")),
+            ("halogen bond donor", "interaction halogen bond sigma hole donor", ("halogen donor",)),
+            ("halogen bond acceptor", "interaction halogen bond acceptor", ("halogen acceptor",)),
+            ("chalcogen bond donor", "interaction chalcogen bond sigma hole donor", ("chalcogen donor",)),
+            ("chalcogen bond acceptor", "interaction chalcogen bond acceptor", ("chalcogen acceptor",)),
+            ("metal coordination ligand", "interaction metal coordination coordination ligand", ("metal ligand",)),
+        ):
+            with self.subTest(canonical=canonical):
+                for alias in (shared_name, *aliases):
+                    self.assertEqual(registry.resolve(alias), registry.resolve(canonical))
+                    self.assertNotIn(alias, registry.definitions)
+        result = MolecularSelector().select_molecules(
+            [Chem.MolFromSmiles("CCO")], name="interaction hydrogen bond donor"
+        )
+        self.assertEqual(result["selector"]["name"], "hydrogen bond donor")
+
+    def test_batch_rejects_duplicate_interaction_aliases(self):
+        self.write_molecules(["CCO"])
+        input_file = self.path.parent / "duplicate.csv"
+        input_file.write_text(
+            "file,hydrogen bond donor,interaction hydrogen bond donor\nmolecules.sdf,x,x\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "duplicate CSV selector"):
+            BatchSelector().select(input_file)
 
     def test_shared_role_site_labels_and_composite_csv(self):
         self.write_molecules(["CC(=O)O", "CC(=O)N"])
@@ -350,6 +435,9 @@ class SelectorTests(unittest.TestCase):
         read_sdf.assert_called_once()
         results = result["rows"][0]["results"]
         self.assertEqual([item["selector"]["name"] for item in results], list(matcher.registry.definitions))
+        names = [item["selector"]["name"] for item in results]
+        self.assertEqual(names.count("hydrogen bond donor"), 1)
+        self.assertNotIn("interaction hydrogen bond donor", names)
         thioether = next(item for item in results if item["selector"]["name"] == "thioether")
         self.assertEqual(thioether["molecules"][0]["matches"][0]["site_atom_indices"], [1])
         carboxylate = next(item for item in results if item["selector"]["name"] == "carboxylate")

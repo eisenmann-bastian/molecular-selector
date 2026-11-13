@@ -4,25 +4,32 @@ import json
 import re
 from dataclasses import dataclass
 
-from molecular_functional_groups import (
-    FunctionalGroup,
-    INTERACTION_SITES,
-    InteractionRole,
-    InteractionType,
-    MAPPED_FUNCTIONAL_GROUP_SMARTS,
-    get_interaction_site,
-)
 from rdkit import Chem
+
+from .patterns import (
+    CARBONYL_SITE_SMARTS,
+    CARBOXYLATE_OXYGEN_PAIR_SMARTS,
+    METAL_CENTER_SITE_SMARTS,
+    NEGATIVE_CHARGE_SITE_SMARTS,
+    POSITIVE_CHARGE_SITE_SMARTS,
+    FunctionalGroup,
+)
+from .interactions import InteractionRole, InteractionType
+from .sites import INTERACTION_SITES, MAPPED_FUNCTIONAL_GROUP_SMARTS, get_interaction_site
 
 
 @dataclass(frozen=True)
 class SelectorQuery:
+    """A SMARTS query and optional atom-map labels for its highlighted sites."""
+
     smarts: str
     atom_map_numbers: tuple[int, ...] | None = None
 
 
 @dataclass(frozen=True)
 class NamedSelector:
+    """A named query, its aliases, and optionally its component queries."""
+
     smarts: str | None
     aliases: tuple[str, ...] = ()
     queries: tuple[SelectorQuery, ...] = ()
@@ -55,44 +62,31 @@ def _group_site(group, interaction, role):
     return SelectorQuery(site.smarts, site.atom_map_numbers)
 
 
-CARBOXYLATE_SMARTS = "[C;+0;X3;$([C]-[#6]),$([C;H1])](=[O;+0;X1;H0:1])-[O-;X1;H0:2]"
-CARBOXYLATE_QUERY = Chem.MolFromSmarts(CARBOXYLATE_SMARTS)
-
-
-def carboxylate_sites(mol):
-    """Map each oxygen in a carboxylate group to its carbon and oxygen indices."""
-    groups = {}
-    for carbon, oxygen1, oxygen2 in mol.GetSubstructMatches(CARBOXYLATE_QUERY, maxMatches=0):
-        group = (carbon, *sorted((oxygen1, oxygen2)))
-        groups[oxygen1] = group
-        groups[oxygen2] = group
-    return groups
-
-
-SELECTORS = {
-    group.value.replace("_", " "): _named_queries([_group_query(group)])
-    for group in FunctionalGroup
-}
-
 _HBOND = InteractionType.HYDROGEN_BOND
 _DONOR = InteractionRole.DONOR
 _ACCEPTOR = InteractionRole.ACCEPTOR
-_SITE_GROUPS = {
-    "thioether": (FunctionalGroup.THIOETHER, _HBOND, _ACCEPTOR, ("sulfide",)),
-    "thiol": (FunctionalGroup.THIOL, _HBOND, _DONOR, ()),
-    "phenol": (FunctionalGroup.PHENOL, _HBOND, _DONOR, ()),
-    "ether": (FunctionalGroup.ETHER, _HBOND, _ACCEPTOR, ()),
-    "aldehyde": (FunctionalGroup.ALDEHYDE, _HBOND, _ACCEPTOR, ()),
-    "ketone": (FunctionalGroup.KETONE, _HBOND, _ACCEPTOR, ()),
-    "carboxylate": (FunctionalGroup.CARBOXYLATE, _HBOND, _ACCEPTOR, ("carboxylate anion",)),
-    "ester": (FunctionalGroup.ESTER, _HBOND, _ACCEPTOR, ()),
-}
-for name, (group, interaction, role, aliases) in _SITE_GROUPS.items():
-    SELECTORS[name] = _named_queries([_group_site(group, interaction, role)], aliases)
 
-SELECTORS["carboxylic acid"] = _named_queries([
-    _group_query(FunctionalGroup.CARBOXYLIC_ACID, (2, 3)),
-])
+
+def _default_group_query(group):
+    labels = set()
+    for role in (_DONOR, _ACCEPTOR):
+        site = INTERACTION_SITES[_HBOND][role].get(group)
+        if site is not None:
+            labels.update(site.atom_map_numbers)
+    return _group_query(group, tuple(sorted(labels)) if labels else None)
+
+
+_GROUP_ALIASES = {
+    FunctionalGroup.THIOETHER: ("sulfide",),
+    FunctionalGroup.CARBOXYLATE: ("carboxylate anion",),
+}
+SELECTORS = {
+    group.value.replace("_", " "): _named_queries(
+        [_default_group_query(group)], _GROUP_ALIASES.get(group, ())
+    )
+    for group in FunctionalGroup
+}
+
 SELECTORS["alcohol"] = _named_queries([
     _group_site(group, _HBOND, _DONOR) for group in (
         FunctionalGroup.PRIMARY_ALCOHOL,
@@ -115,51 +109,55 @@ SELECTORS["amide"] = _named_queries([
     )
 ])
 
+_INTERACTION_NAMES = {
+    (InteractionType.HYDROGEN_BOND, _DONOR): ("hydrogen bond donor", "h bond donor", "hbond donor"),
+    (InteractionType.HYDROGEN_BOND, _ACCEPTOR): ("hydrogen bond acceptor", "h bond acceptor", "hbond acceptor"),
+    (InteractionType.HALOGEN_BOND, InteractionRole.SIGMA_HOLE_DONOR): ("halogen bond donor", "halogen donor"),
+    (InteractionType.HALOGEN_BOND, _ACCEPTOR): ("halogen bond acceptor", "halogen acceptor"),
+    (InteractionType.CHALCOGEN_BOND, InteractionRole.SIGMA_HOLE_DONOR): ("chalcogen bond donor", "chalcogen donor"),
+    (InteractionType.CHALCOGEN_BOND, _ACCEPTOR): ("chalcogen bond acceptor", "chalcogen acceptor"),
+    (InteractionType.METAL_COORDINATION, InteractionRole.COORDINATION_LIGAND): ("metal coordination ligand", "metal ligand"),
+}
 for interaction, roles in INTERACTION_SITES.items():
     for role in roles:
-        name = f"interaction {interaction.value.replace('_', ' ')} {role.value.replace('_', ' ')}"
-        SELECTORS[name] = _named_queries(_role_queries(interaction, role))
+        shared_name = f"interaction {interaction.value.replace('_', ' ')} {role.value.replace('_', ' ')}"
+        names = _INTERACTION_NAMES.get((interaction, role))
+        if names is None:
+            SELECTORS[shared_name] = _named_queries(_role_queries(interaction, role))
+        else:
+            SELECTORS[names[0]] = _named_queries(
+                _role_queries(interaction, role), (*names[1:], shared_name)
+            )
 
 SELECTORS.update({
-    "carbonyl": NamedSelector("[C]=[O:1]"),
-    "hydrogen bond donor": _named_queries(
-        _role_queries(_HBOND, _DONOR), ("h bond donor", "hbond donor")
-    ),
-    "hydrogen bond acceptor": _named_queries(
-        _role_queries(_HBOND, _ACCEPTOR), ("h bond acceptor", "hbond acceptor")
-    ),
-    "halogen bond donor": _named_queries(
-        _role_queries(InteractionType.HALOGEN_BOND, InteractionRole.SIGMA_HOLE_DONOR),
-        ("halogen donor",),
-    ),
-    "halogen bond acceptor": _named_queries(
-        _role_queries(InteractionType.HALOGEN_BOND, _ACCEPTOR), ("halogen acceptor",)
-    ),
+    "carbonyl": NamedSelector(CARBONYL_SITE_SMARTS),
     "positive charge": NamedSelector(
-        "[+1,+2,+3,+4:1]", ("cation", "ionic positive", "cation pi cation", "ionic interaction cation")
+        POSITIVE_CHARGE_SITE_SMARTS,
+        ("cation", "ionic positive", "cation pi cation", "ionic interaction cation"),
     ),
     "negative charge": NamedSelector(
-        "[-1,-2,-3,-4:1]", ("anion", "ionic negative", "ionic interaction anion")
+        NEGATIVE_CHARGE_SITE_SMARTS, ("anion", "ionic negative", "ionic interaction anion")
     ),
-    "aromatic ring": NamedSelector(
-        None, ("aromatic group", "pi pi", "pi pi ring", "pi pi interaction", "cation pi ring")
-    ),
-    "chalcogen bond donor": _named_queries(
-        _role_queries(InteractionType.CHALCOGEN_BOND, InteractionRole.SIGMA_HOLE_DONOR),
-        ("chalcogen donor",),
-    ),
-    "chalcogen bond acceptor": _named_queries(
-        _role_queries(InteractionType.CHALCOGEN_BOND, _ACCEPTOR), ("chalcogen acceptor",)
-    ),
-    "metal center": NamedSelector(
-        "[Li,Na,K,Mg,Ca,Mn,Fe,Co,Ni,Cu,Zn,Cd,Hg,Pt,Pd;+1,+2,+3,+4:1]",
-        ("metal coordination center",),
-    ),
-    "metal coordination ligand": _named_queries(
-        _role_queries(InteractionType.METAL_COORDINATION, InteractionRole.COORDINATION_LIGAND),
-        ("metal ligand",),
-    ),
+    "metal center": NamedSelector(METAL_CENTER_SITE_SMARTS, ("metal coordination center",)),
 })
+
+CARBOXYLATE_SMARTS = CARBOXYLATE_OXYGEN_PAIR_SMARTS
+CARBOXYLATE_QUERY = Chem.MolFromSmarts(CARBOXYLATE_SMARTS)
+
+
+def carboxylate_sites(mol):
+    """Map each oxygen in a carboxylate group to its carbon and oxygen indices."""
+    groups = {}
+    for carbon, oxygen1, oxygen2 in mol.GetSubstructMatches(CARBOXYLATE_QUERY, maxMatches=0):
+        group = (carbon, *sorted((oxygen1, oxygen2)))
+        groups[oxygen1] = group
+        groups[oxygen2] = group
+    return groups
+
+
+SELECTORS["aromatic ring"] = NamedSelector(
+    None, ("aromatic group", "pi pi", "pi pi ring", "pi pi interaction", "cation pi ring")
+)
 
 
 class SelectorRegistry:
